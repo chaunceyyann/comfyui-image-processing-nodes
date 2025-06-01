@@ -153,7 +153,7 @@ class ImageSizeProcessorNode:
     
     RETURN_TYPES = ("IMAGE",)
     FUNCTION = "process"
-    CATEGORY = "image/processing"
+    CATEGORY = "cyan-image"
     
     def process(self, image, max_dimension, min_dimension, upscale_model, auto_select):
         log_message(f"Processing batch of {len(image)} images")

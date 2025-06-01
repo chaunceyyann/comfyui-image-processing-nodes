@@ -12,7 +12,7 @@ git clone https://github.com/yourusername/comfyui-image-processing-nodes.git
 
 ## Usage
 
-After installation, the nodes will be available in ComfyUI's node menu under the "Image Processing" category.
+After installation, the nodes will be available in ComfyUI's node menu under the "Cyan Image" category.
 
 ## License
 
