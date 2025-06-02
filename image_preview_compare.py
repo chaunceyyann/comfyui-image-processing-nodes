@@ -1,139 +1,63 @@
-import torch
-import numpy as np
-from PIL import Image
+from nodes import PreviewImage
 import folder_paths
 
-class ImagePreviewCompare:
-    mode = "overlay"  # Class variable to track current mode
+print("[ImagePreviewCompare] Loading node module")
+
+class ImagePreviewCompare(PreviewImage):
+    def __init__(self):
+        print("[ImagePreviewCompare] Initializing node")
+        super().__init__()
+        self.mode = "overlay"
     
     @classmethod
     def INPUT_TYPES(s):
+        print("[ImagePreviewCompare] Getting input types")
         return {
             "required": {
                 "image1": ("IMAGE",),
                 "image2": ("IMAGE",),
                 "mode": (["overlay", "split"], {"default": "overlay"}),
-            },
-            "optional": {
-                "opacity": ("FLOAT", {
-                    "default": 0.5,
-                    "min": 0.0,
-                    "max": 1.0,
-                    "step": 0.01,
-                    "display": "slider"
-                }),
-                "split_position": ("FLOAT", {
-                    "default": 0.5,
-                    "min": 0.0,
-                    "max": 1.0,
-                    "step": 0.01,
-                    "display": "slider"
-                }),
-                "line_color": (["white", "black"], {"default": "white"}),
-                "glow_intensity": ("FLOAT", {
-                    "default": 0.3,
-                    "min": 0.0,
-                    "max": 1.0,
-                    "step": 0.01,
-                    "display": "slider"
-                })
             }
         }
     
-    def __init__(self):
-        self.split_position = 0.5
-        self.opacity = 0.5
-    
-    RETURN_TYPES = ("IMAGE",)
     FUNCTION = "preview_compare"
     CATEGORY = "cyan-image"
+    OUTPUT_NODE = True
+    WEB_DIRECTORY = "./web/comfyui"
     
-    def resize_image(self, image, target_height, target_width):
-        # Convert tensor to PIL Image
-        if isinstance(image, torch.Tensor):
-            # Handle batch dimension
-            if len(image.shape) == 4:
-                image = image[0]  # Take first image from batch
-            image = (image.cpu().numpy() * 255).astype(np.uint8)
-            image = Image.fromarray(image)
+    def preview_compare(self, image1, image2, mode, filename_prefix="preview_compare", prompt=None, extra_pnginfo=None):
+        print(f"[ImagePreviewCompare] Starting preview_compare with mode: {mode}")
+        print(f"[ImagePreviewCompare] Image1 shape: {image1.shape if image1 is not None else None}")
+        print(f"[ImagePreviewCompare] Image2 shape: {image2.shape if image2 is not None else None}")
         
-        # Resize image
-        resized = image.resize((target_width, target_height), Image.Resampling.LANCZOS)
+        # Update state
+        self.mode = mode
         
-        # Convert back to tensor
-        resized = np.array(resized).astype(np.float32) / 255.0
-        resized = torch.from_numpy(resized).unsqueeze(0)  # Add batch dimension
-        return resized
-    
-    def preview_compare(self, image1, image2, mode, opacity=0.5, split_position=0.5, line_color="white", glow_intensity=0.3):
-        # Update the mode
-        self.__class__.mode = mode
+        # Initialize result with empty images array
+        result = {
+            "images": []
+        }
         
-        # Get dimensions
-        batch_size1, height1, width1, channels1 = image1.shape
-        batch_size2, height2, width2, channels2 = image2.shape
+        # Save first image
+        if image1 is not None and len(image1) > 0:
+            print("[ImagePreviewCompare] Saving image1")
+            image1_result = self.save_images(image1, filename_prefix + "_1", prompt, extra_pnginfo)
+            print(f"[ImagePreviewCompare] Image1 save result: {image1_result}")
+            if 'ui' in image1_result and 'images' in image1_result['ui']:
+                result['images'].extend(image1_result['ui']['images'])
         
-        # Check if dimensions are different
-        if height1 != height2 or width1 != width2:
-            print(f"Resizing processed image from {width1}x{height1} to {width2}x{height2}")
-            # Resize image1 to match image2's dimensions
-            image1 = self.resize_image(image1, height2, width2)
+        # Save second image
+        if image2 is not None and len(image2) > 0:
+            print("[ImagePreviewCompare] Saving image2")
+            image2_result = self.save_images(image2, filename_prefix + "_2", prompt, extra_pnginfo)
+            print(f"[ImagePreviewCompare] Image2 save result: {image2_result}")
+            if 'ui' in image2_result and 'images' in image2_result['ui']:
+                result['images'].extend(image2_result['ui']['images'])
         
-        if mode == "overlay":
-            # Overlay mode: blend images based on opacity
-            result = image1 * (1 - opacity) + image2 * opacity
-        else:
-            # Split view mode: combine images with a vertical split
-            batch_size, height, width, channels = image2.shape  # Use image2's dimensions
-            split_x = int(width * split_position)
-            
-            # Create a copy of image1
-            result = image1.clone()
-            
-            # Replace the right portion with image2
-            result[:, :, split_x:] = image2[:, :, split_x:]
-            
-            # Create glow effect
-            glow_width = 6  # Width of the glow effect
-            line_width = 2  # Width of the solid line
-            
-            # Create a gradient for the glow
-            x = torch.arange(-glow_width, glow_width + 1, device=result.device)
-            glow = torch.exp(-(x ** 2) / (2 * (glow_width/2) ** 2))  # Gaussian distribution
-            glow = glow / glow.max()  # Normalize to 0-1
-            glow = glow * glow_intensity  # Apply intensity
-            
-            # Create the glow mask
-            glow_mask = torch.zeros((height, width), device=result.device)
-            for i, g in enumerate(glow):
-                pos = split_x - glow_width + i
-                if 0 <= pos < width:
-                    glow_mask[:, pos] = g
-            
-            # Set line color based on selection
-            line_color_value = torch.tensor([1.0, 1.0, 1.0], device=result.device) if line_color == "white" else torch.tensor([0.0, 0.0, 0.0], device=result.device)
-            
-            # Apply glow effect
-            for c in range(channels):  # Apply to each color channel
-                result[:, :, :, c] = torch.where(
-                    glow_mask.unsqueeze(0) > 0,
-                    torch.lerp(result[:, :, :, c], line_color_value[c], glow_mask.unsqueeze(0)),
-                    result[:, :, :, c]
-                )
-            
-            # Add the solid line
-            result[:, :, split_x-line_width//2:split_x+line_width//2] = line_color_value
-        
-        # Convert the result to a PIL Image for display
-        if isinstance(result, torch.Tensor):
-            # Take the first image from the batch
-            img = result[0].cpu().numpy()
-            # Convert from [0,1] to [0,255] range
-            img = (img * 255).astype(np.uint8)
-            return (result, {"ui": {"images": [Image.fromarray(img)]}})
-        
-        return (result, {"ui": {}})
+        print(f"[ImagePreviewCompare] Final result: {result}")
+        return result
 
+print("[ImagePreviewCompare] Registering node class")
 # Register the node
 NODE_CLASS_MAPPINGS = {
     "ImagePreviewCompare": ImagePreviewCompare
@@ -141,4 +65,6 @@ NODE_CLASS_MAPPINGS = {
 
 NODE_DISPLAY_NAME_MAPPINGS = {
     "ImagePreviewCompare": "Image Preview Compare"
-} 
+}
+
+print("[ImagePreviewCompare] Node registration complete") 
