@@ -25,10 +25,11 @@ class VideoThumbnailExtractor(PreviewImage):
         }
 
     RETURN_TYPES = ("IMAGE",)
-    RETURN_NAMES = ("thumbnail",)
+    RETURN_NAMES = ("image",)
     FUNCTION = "extract_thumbnail"
     CATEGORY = "cyan-image"
     OUTPUT_NODE = True
+    BACKGROUND_COLOR = "#00FFFF"  # Cyan color
 
     def extract_thumbnail(self, video, frame_number=1, filename_prefix="video_thumbnail", prompt=None, extra_pnginfo=None):
         print(f"[VideoThumbnailExtractor] Processing video: {video}")

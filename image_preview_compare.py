@@ -20,12 +20,15 @@ class ImagePreviewCompare(PreviewImage):
             }
         }
     
+    RETURN_TYPES = ("IMAGE",)
+    RETURN_NAMES = ("image",)
     FUNCTION = "preview_compare"
     CATEGORY = "cyan-image"
     OUTPUT_NODE = True
+    BACKGROUND_COLOR = "#00FFFF"  # Cyan color
     WEB_DIRECTORY = "./web/comfyui"
     
-    def preview_compare(self, image1, image2, mode, filename_prefix="preview_compare", prompt=None, extra_pnginfo=None):
+    def preview_compare(self, image1, image2, mode="overlay", opacity=0.5, split_position=0.5, split_line_color="white", split_line_glow=0.0, filename_prefix="preview_compare", prompt=None, extra_pnginfo=None):
         print(f"[ImagePreviewCompare] Starting preview_compare with mode: {mode}")
         print(f"[ImagePreviewCompare] Image1 shape: {image1.shape if image1 is not None else None}")
         print(f"[ImagePreviewCompare] Image2 shape: {image2.shape if image2 is not None else None}")

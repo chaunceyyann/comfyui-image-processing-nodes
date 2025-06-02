@@ -24,8 +24,9 @@ class YouTubeThumbnailExtractor(PreviewImage):
     FUNCTION = "extract_thumbnail"
     CATEGORY = "cyan-image"
     OUTPUT_NODE = True
+    BACKGROUND_COLOR = "#00FFFF"  # Cyan color
 
-    def extract_thumbnail(self, url, filename_prefix="thumbnail", prompt=None, extra_pnginfo=None):
+    def extract_thumbnail(self, url, filename_prefix="youtube_thumbnail", prompt=None, extra_pnginfo=None):
         print(f"[YouTubeThumbnailExtractor] Processing URL: {url}")
         
         # Check if it's a direct image URL

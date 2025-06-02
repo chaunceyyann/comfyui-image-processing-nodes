@@ -34,6 +34,7 @@ class RandomPersonPhoto(PreviewImage):
     FUNCTION = "get_random_person"
     CATEGORY = "cyan-image"
     OUTPUT_NODE = True
+    BACKGROUND_COLOR = "#00FFFF"  # Cyan color
 
     def get_random_person(self, width=800, height=1200, gender="random", query="portrait", seed=-1, filename_prefix="random_person", prompt=None, extra_pnginfo=None):
         print(f"[RandomPersonPhoto] Fetching random person photo ({width}x{height}, gender: {gender})")
