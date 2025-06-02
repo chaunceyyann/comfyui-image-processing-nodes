@@ -3,9 +3,50 @@ import numpy as np
 from PIL import Image
 import folder_paths
 import os
+import hashlib
 
 def log_message(message):
     print(f"[ImageSizeProcessor] {message}")
+
+# Cache for upscaled images
+class ImageCache:
+    def __init__(self, max_size=100):
+        self.cache = {}
+        self.max_size = max_size
+        self.access_count = {}
+    
+    def get_key(self, image, scale_factor):
+        # Create a hash of the image data and scale factor
+        if isinstance(image, torch.Tensor):
+            image_np = image.cpu().numpy()
+        else:
+            image_np = np.array(image)
+        image_bytes = image_np.tobytes()
+        return hashlib.md5(image_bytes + str(scale_factor).encode()).hexdigest()
+    
+    def get(self, image, scale_factor):
+        key = self.get_key(image, scale_factor)
+        if key in self.cache:
+            self.access_count[key] += 1
+            log_message(f"Cache hit for image with scale {scale_factor}")
+            return self.cache[key]
+        return None
+    
+    def put(self, image, scale_factor, processed_image):
+        key = self.get_key(image, scale_factor)
+        
+        # If cache is full, remove least accessed item
+        if len(self.cache) >= self.max_size:
+            min_key = min(self.access_count.items(), key=lambda x: x[1])[0]
+            del self.cache[min_key]
+            del self.access_count[min_key]
+        
+        self.cache[key] = processed_image
+        self.access_count[key] = 1
+        log_message(f"Cached image with scale {scale_factor}")
+
+# Initialize global cache
+image_cache = ImageCache()
 
 # Predefined Stable Diffusion dimensions organized by model and orientation
 SD_DIMENSIONS = {
@@ -111,6 +152,11 @@ class ImageSizeProcessor:
             scale_factor = np.sqrt(self.min_pixels / total_pixels)
             log_message(f"Upscaling required. Scale factor: {scale_factor}")
             
+            # Check cache first
+            cached_image = image_cache.get(image, scale_factor)
+            if cached_image is not None:
+                return cached_image
+            
             # Convert to tensor for upscaling
             img_tensor = torch.from_numpy(np.array(image)).float() / 255.0
             img_tensor = img_tensor.permute(2, 0, 1).unsqueeze(0)
@@ -132,6 +178,9 @@ class ImageSizeProcessor:
                 new_height = int(image.height * final_scale)
                 log_message(f"Additional Lanczos scaling to {new_width}x{new_height} (scale factor: {final_scale})")
                 image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+            
+            # Cache the result
+            image_cache.put(image, scale_factor, image)
         else:
             log_message("Image is within size limits, no processing needed")
         
