@@ -127,7 +127,7 @@ class ImageSizeProcessor:
         self.max_pixels = SD_DIMENSIONS["High Res - Square (1536x1536)"]  # Default to SDXL square
         self.min_pixels = SD_DIMENSIONS["SD 2.x - Square (768x768)"]  # Default minimum size
     
-    def process_image(self, image, upscale_model=None):
+    def process_image(self, image, upscale_model=None, resize_method="lanczos", scale_factor=2.0):
         # Convert to PIL Image if it's not already
         if isinstance(image, torch.Tensor):
             image = Image.fromarray((image.cpu().numpy() * 255).astype(np.uint8))
@@ -147,45 +147,53 @@ class ImageSizeProcessor:
             new_height = int(height * scale_factor)
             log_message(f"Downscaling image to {new_width}x{new_height} (scale factor: {scale_factor})")
             image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
-        elif total_pixels < self.min_pixels and upscale_model is not None:
+        elif total_pixels < self.min_pixels:
             # Upscale
-            scale_factor = np.sqrt(self.min_pixels / total_pixels)
-            log_message(f"Upscaling required. Scale factor: {scale_factor}")
-            
-            # Check cache first
-            cached_image = image_cache.get(image, scale_factor)
-            if cached_image is not None:
-                return cached_image
-            
-            # Convert to tensor for upscaling
-            img_tensor = torch.from_numpy(np.array(image)).float() / 255.0
-            img_tensor = img_tensor.permute(2, 0, 1).unsqueeze(0)
-            
-            log_message(f"Upscaling image with provided upscaler...")
-            # Upscale using the model
-            with torch.no_grad():
-                upscaled = upscale_model(img_tensor)
-            
-            # Convert back to PIL
-            upscaled = upscaled.squeeze(0).permute(1, 2, 0).cpu().numpy()
-            upscaled = np.clip(upscaled * 255, 0, 255).astype(np.uint8)
-            image = Image.fromarray(upscaled)
-            
-            # If we need more scaling, do it with Lanczos
-            if scale_factor > 4.0:
-                final_scale = scale_factor / 4.0
-                new_width = int(image.width * final_scale)
-                new_height = int(image.height * final_scale)
-                log_message(f"Additional Lanczos scaling to {new_width}x{new_height} (scale factor: {final_scale})")
-                image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
-            
-            # Cache the result
-            image_cache.put(image, scale_factor, image)
+            if upscale_model is not None:
+                # Use upscaler model
+                log_message(f"Using upscaler model for scaling")
+                # Convert to tensor for upscaling
+                img_tensor = torch.from_numpy(np.array(image)).float() / 255.0
+                img_tensor = img_tensor.permute(2, 0, 1).unsqueeze(0)
+                
+                log_message(f"Upscaling image with provided upscaler...")
+                # Upscale using the model
+                with torch.no_grad():
+                    upscaled = upscale_model(img_tensor)
+                
+                # Convert back to PIL
+                upscaled = upscaled.squeeze(0).permute(1, 2, 0).cpu().numpy()
+                upscaled = np.clip(upscaled * 255, 0, 255).astype(np.uint8)
+                image = Image.fromarray(upscaled)
+                
+                # If we need more scaling, do it with selected method
+                if scale_factor > 4.0:
+                    final_scale = scale_factor / 4.0
+                    new_width = int(image.width * final_scale)
+                    new_height = int(image.height * final_scale)
+                    log_message(f"Additional scaling to {new_width}x{new_height} (scale factor: {final_scale})")
+                    image = image.resize((new_width, new_height), self._get_resize_method(resize_method))
+            else:
+                # Simple resize without upscaler
+                new_width = int(width * scale_factor)
+                new_height = int(height * scale_factor)
+                log_message(f"Simple resize to {new_width}x{new_height} using {resize_method} method (scale factor: {scale_factor})")
+                image = image.resize((new_width, new_height), self._get_resize_method(resize_method))
         else:
             log_message("Image is within size limits, no processing needed")
         
         log_message(f"Final image size: {image.size}")
         return image
+    
+    def _get_resize_method(self, method):
+        """Convert string resize method to PIL Resampling enum"""
+        methods = {
+            "lanczos": Image.Resampling.LANCZOS,
+            "bicubic": Image.Resampling.BICUBIC,
+            "bilinear": Image.Resampling.BILINEAR,
+            "nearest": Image.Resampling.NEAREST
+        }
+        return methods.get(method.lower(), Image.Resampling.LANCZOS)
 
 class ImageSizeProcessorNode:
     @classmethod
@@ -197,6 +205,9 @@ class ImageSizeProcessorNode:
                 "min_dimension": (list(SD_DIMENSIONS.keys()), {"default": "SD 1.x - Square (512x512)"}),
                 "upscale_model": ("UPSCALE_MODEL", {"default": None}),
                 "auto_select": ("BOOLEAN", {"default": False}),
+                "use_upscaler": ("BOOLEAN", {"default": True}),
+                "resize_method": (["lanczos", "bicubic", "bilinear", "nearest"], {"default": "lanczos"}),
+                "scale_factor": ("FLOAT", {"default": 2.0, "min": 1.0, "max": 8.0, "step": 0.1}),
             },
         }
     
@@ -205,7 +216,7 @@ class ImageSizeProcessorNode:
     CATEGORY = "cyan-image"
     BACKGROUND_COLOR = "#00FFFF"  # Cyan color
     
-    def process(self, image, max_dimension, min_dimension, upscale_model, auto_select):
+    def process(self, image, max_dimension, min_dimension, upscale_model, auto_select, use_upscaler, resize_method, scale_factor):
         log_message(f"Processing batch of {len(image)} images")
         processor = ImageSizeProcessor()
         
@@ -226,7 +237,7 @@ class ImageSizeProcessorNode:
                     processor.max_pixels = SD_DIMENSIONS[selected_dimension]
             
             log_message(f"Processing image {i+1}/{len(image)}")
-            processed = processor.process_image(img, upscale_model)
+            processed = processor.process_image(img, upscale_model if use_upscaler else None, resize_method, scale_factor)
             processed_images.append(np.array(processed))
         
         # Convert to tensor
