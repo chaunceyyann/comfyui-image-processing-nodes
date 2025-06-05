@@ -1,0 +1,15 @@
+[project]
+name = "image-processing-nodes"
+description = "A collection of custom nodes for ComfyUI focused on image processing operations."
+version = "1.0.0"
+license = {file = "LICENSE"}
+
+[project.urls]
+Repository = "https://github.com/chaunceyyann/comfyui-image-processing-nodes"
+#  Used by Comfy Registry https://registry.comfy.org
+
+[tool.comfy]
+PublisherId = ""
+DisplayName = "comfyui-image-processing-nodes"
+Icon = ""
+includes = []
