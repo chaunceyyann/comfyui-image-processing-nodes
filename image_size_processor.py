@@ -1,8 +1,6 @@
 import torch
 import numpy as np
 from PIL import Image
-import folder_paths
-import os
 import hashlib
 
 def log_message(message):
