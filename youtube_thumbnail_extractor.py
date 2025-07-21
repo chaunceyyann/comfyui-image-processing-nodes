@@ -96,12 +96,13 @@ class YouTubeThumbnailExtractor(PreviewImage):
         return image_tensor
 
     def _extract_video_id(self, url):
-        # Regular expressions to match various YouTube URL formats
+        # Regular expressions to match various YouTube URL formats, including Shorts
         patterns = [
             r"youtube\.com/watch\?v=([\w-]{11})",
             r"youtu\.be/([\w-]{11})",
             r"youtube\.com/embed/([\w-]{11})",
             r"youtube\.com/v/([\w-]{11})",
+            r"youtube\.com/shorts/([\w-]{11})",
         ]
         for pattern in patterns:
             match = re.search(pattern, url)
