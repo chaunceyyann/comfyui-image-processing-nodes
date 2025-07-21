@@ -120,6 +120,23 @@ def get_dimension_from_aspect_ratio(width, height):
         else:
             return "High Res - Square (2048x2048)"
 
+def get_2m_pixel_dimensions(width, height):
+    """Calculate dimensions for approximately 2 million pixels while maintaining aspect ratio"""
+    target_pixels = 2000000  # 2 million pixels
+    aspect_ratio = height / width
+    
+    # Calculate new dimensions
+    new_width = int(np.sqrt(target_pixels / aspect_ratio))
+    new_height = int(target_pixels / new_width)
+    
+    # Ensure we're as close to 2M pixels as possible
+    actual_pixels = new_width * new_height
+    if actual_pixels < target_pixels:
+        # Try to get closer by adjusting height
+        new_height = int(target_pixels / new_width)
+    
+    return new_width, new_height
+
 class ImageSizeProcessor:
     def __init__(self):
         self.max_pixels = SD_DIMENSIONS["High Res - Square (1536x1536)"]  # Default to SDXL square
@@ -230,9 +247,15 @@ class ImageSizeProcessorNode:
                 if isinstance(img, torch.Tensor):
                     pil_img = Image.fromarray((img.cpu().numpy() * 255).astype(np.uint8))
                     width, height = pil_img.size
-                    selected_dimension = get_dimension_from_aspect_ratio(width, height)
-                    log_message(f"Auto-selected dimension: {selected_dimension}")
-                    processor.max_pixels = SD_DIMENSIONS[selected_dimension]
+                    new_width, new_height = get_2m_pixel_dimensions(width, height)
+                    log_message(f"Auto-select: Resizing to {new_width}x{new_height} (target: ~2M pixels) using fast resize")
+                    img = pil_img.resize((new_width, new_height), Image.Resampling.NEAREST)  # Fast resize method
+                else:
+                    # If it's already a PIL Image
+                    width, height = img.size
+                    new_width, new_height = get_2m_pixel_dimensions(width, height)
+                    log_message(f"Auto-select: Resizing to {new_width}x{new_height} (target: ~2M pixels) using fast resize")
+                    img = img.resize((new_width, new_height), Image.Resampling.NEAREST)  # Fast resize method
             
             log_message(f"Processing image {i+1}/{len(image)}")
             processed = processor.process_image(img, upscale_model if use_upscaler else None, resize_method, scale_factor)
