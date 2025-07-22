@@ -3,11 +3,12 @@ import requests
 from io import BytesIO
 import torch
 import numpy as np
-from PIL import Image
+from PIL import Image, ImageSequence
 from nodes import PreviewImage
 from urllib.parse import urlparse
 import os
 import string
+import imageio  # <-- add this import
 
 class YouTubeThumbnailExtractor(PreviewImage):
     def __init__(self):
@@ -97,20 +98,41 @@ class YouTubeThumbnailExtractor(PreviewImage):
         return any(path.lower().endswith(ext) for ext in image_extensions)
 
     def _download_image(self, url, return_pil=False):
-        """Download and convert image to tensor. Optionally return PIL image and filename."""
-        response = requests.get(url, timeout=10)
+        """Download and convert image, GIF, or MP4 to tensor. Optionally return PIL image and filename."""
+        # Set headers for browser-like request
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+        }
+        response = requests.get(url, headers=headers, timeout=10)
         if response.status_code != 200:
             raise ValueError(f"Failed to download image. Status code: {response.status_code}")
-        # Convert image to tensor for ComfyUI
-        pil_image = Image.open(BytesIO(response.content)).convert("RGB")
-        image_np = np.array(pil_image).astype(np.float32) / 255.0
-        # ComfyUI expects tensors in format [batch, height, width, channels]
-        image_tensor = torch.from_numpy(image_np).unsqueeze(0)
-        print(f"[YouTubeThumbnailExtractor] Image tensor shape: {image_tensor.shape}")
-        # Get a filename from the URL
+        content_type = response.headers.get('Content-Type', '')
         parsed = urlparse(url)
         base = os.path.basename(parsed.path)
         save_name = base if base else "downloaded_image.jpg"
+        # Handle GIF
+        if url.lower().endswith('.gif') or 'gif' in content_type:
+            pil_image = Image.open(BytesIO(response.content))
+            pil_image.seek(0)  # First frame
+            pil_image = pil_image.convert("RGB")
+        # Handle MP4
+        elif url.lower().endswith('.mp4') or 'mp4' in content_type:
+            # Save to temp file
+            import tempfile
+            with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as tmp:
+                tmp.write(response.content)
+                tmp_path = tmp.name
+            # Read first frame
+            reader = imageio.get_reader(tmp_path)
+            frame = reader.get_data(0)
+            reader.close()  # Close the reader before deleting the file
+            pil_image = Image.fromarray(frame).convert("RGB")
+            os.remove(tmp_path)
+        else:
+            pil_image = Image.open(BytesIO(response.content)).convert("RGB")
+        image_np = np.array(pil_image).astype(np.float32) / 255.0
+        image_tensor = torch.from_numpy(image_np).unsqueeze(0)
+        print(f"[YouTubeThumbnailExtractor] Image tensor shape: {image_tensor.shape}")
         if return_pil:
             return image_tensor, pil_image, save_name
         return image_tensor
