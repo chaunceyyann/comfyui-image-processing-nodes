@@ -137,6 +137,23 @@ def get_2m_pixel_dimensions(width, height):
     
     return new_width, new_height
 
+def get_400k_pixel_dimensions(width, height):
+    """Calculate dimensions for approximately 400k pixels while maintaining aspect ratio"""
+    target_pixels = 400000  # 400k pixels
+    aspect_ratio = height / width
+    
+    # Calculate new dimensions
+    new_width = int(np.sqrt(target_pixels / aspect_ratio))
+    new_height = int(target_pixels / new_width)
+    
+    # Ensure we're as close to 400k pixels as possible
+    actual_pixels = new_width * new_height
+    if actual_pixels < target_pixels:
+        # Try to get closer by adjusting height
+        new_height = int(target_pixels / new_width)
+    
+    return new_width, new_height
+
 class ImageSizeProcessor:
     def __init__(self):
         self.max_pixels = SD_DIMENSIONS["High Res - Square (1536x1536)"]  # Default to SDXL square
@@ -226,7 +243,8 @@ class ImageSizeProcessorNode:
             },
         }
     
-    RETURN_TYPES = ("IMAGE",)
+    RETURN_TYPES = ("IMAGE", "IMAGE",)
+    RETURN_NAMES = ("image", "image_small",)
     FUNCTION = "process"
     CATEGORY = "cyan-image"
     BACKGROUND_COLOR = "#00FFFF"  # Cyan color
@@ -241,6 +259,7 @@ class ImageSizeProcessorNode:
         
         # Process each image in the batch
         processed_images = []
+        small_images = []
         for i, img in enumerate(image):
             if auto_select:
                 # Convert to PIL Image to get dimensions
@@ -260,10 +279,24 @@ class ImageSizeProcessorNode:
             log_message(f"Processing image {i+1}/{len(image)}")
             processed = processor.process_image(img, upscale_model if use_upscaler else None, resize_method, scale_factor)
             processed_images.append(np.array(processed))
+            
+            # Create small version (~400k pixels)
+            if isinstance(processed, torch.Tensor):
+                pil_processed = Image.fromarray((processed.cpu().numpy() * 255).astype(np.uint8))
+            else:
+                pil_processed = processed
+            
+            width, height = pil_processed.size
+            small_width, small_height = get_400k_pixel_dimensions(width, height)
+            log_message(f"Creating small version: {small_width}x{small_height} (target: ~400k pixels)")
+            small_img = pil_processed.resize((small_width, small_height), Image.Resampling.NEAREST)
+            small_images.append(np.array(small_img))
         
-        # Convert to tensor
+        # Convert to tensors
         processed_tensor = torch.from_numpy(np.stack(processed_images)).float() / 255.0
-        return (processed_tensor,)
+        small_tensor = torch.from_numpy(np.stack(small_images)).float() / 255.0
+        
+        return (processed_tensor, small_tensor)
 
 # Register the node
 NODE_CLASS_MAPPINGS = {
